@@ -1,0 +1,73 @@
+# Cursor Linkup MCP Server
+
+## Project Overview
+This is a custom MCP (Model Context Protocol) server that integrates with Cursor IDE to provide:
+1. **Web Search**: Deep web searches using Linkup API
+2. **RAG (Retrieval Augmented Generation)**: Query documents using LlamaIndex with Ollama
+
+## Setup Instructions
+
+### Prerequisites
+- Python 3.12 or higher
+- [uv](https://github.com/astral-sh/uv) package manager
+- [Ollama](https://ollama.ai/) installed locally with llama3.2 model
+- Linkup API key from https://www.linkup.so/
+- OpenAI API key
+
+### Installation Steps
+
+1. **Install dependencies**:
+   ```bash
+   uv sync
+   ```
+
+2. **Set up environment variables**:
+   Create a `.env` file with:
+   ```
+   LINKUP_API_KEY=your_linkup_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   ```
+
+3. **Install Ollama and pull the model**:
+   ```bash
+   # Install Ollama from https://ollama.ai/
+   ollama pull llama3.2
+   ```
+
+4. **Configure Cursor to use this MCP server**:
+   Add to your Cursor settings (`.cursor/mcp.json` or similar):
+   ```json
+   {
+     "mcpServers": {
+       "linkup-server": {
+         "command": "uv",
+         "args": ["run", "python", "server.py"],
+         "cwd": "/path/to/cursor_linkup_mcp"
+       }
+     }
+   }
+   ```
+
+### Available Tools
+
+1. **web_search(query: str)**: Search the web using Linkup API
+   - Returns sourced answers with citations
+   - Supports standard and deep search modes
+
+2. **rag(query: str)**: Query documents using RAG workflow
+   - Currently configured for DeepSeek PDF in the data/ directory
+   - Uses local Ollama model for LLM operations
+   - Uses HuggingFace embeddings for vector search
+
+### Project Structure
+- `server.py`: Main MCP server implementation
+- `rag.py`: RAG workflow using LlamaIndex
+- `data/`: Document directory for RAG
+- `pyproject.toml`: Project dependencies
+- `.env`: Environment variables (not tracked in git)
+
+### Development Notes
+- The RAG workflow uses Ollama's llama3.2 model locally
+- Documents in the `data/` directory are automatically indexed on server startup
+- The server communicates via stdio protocol with Cursor
+
