@@ -1,4 +1,5 @@
 import asyncio
+import os
 from dotenv import load_dotenv
 from linkup import LinkupClient
 from rag import RAGWorkflow
@@ -7,12 +8,21 @@ from mcp.server.fastmcp import FastMCP
 load_dotenv()
 
 mcp = FastMCP('linkup-server')
-client = LinkupClient()
+
+# Initialize LinkupClient only if API key is available
+linkup_api_key = os.getenv('LINKUP_API_KEY')
+client = None
+if linkup_api_key:
+    client = LinkupClient()
+
 rag_workflow = RAGWorkflow()
 
 @mcp.tool()
 def web_search(query: str) -> str:
     """Search the web for the given query."""
+    if client is None:
+        return "Error: LINKUP_API_KEY not set. Please add it to your .env file to use web search."
+    
     search_response = client.search(
         query=query,
         depth="standard",  # "standard" or "deep"
@@ -30,4 +40,5 @@ async def rag(query: str) -> str:
 if __name__ == "__main__":
     asyncio.run(rag_workflow.ingest_documents("data"))
     mcp.run(transport="stdio")
+
 
