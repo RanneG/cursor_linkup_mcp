@@ -71,3 +71,8 @@ This is a custom MCP (Model Context Protocol) server that integrates with Cursor
 - Documents in the `data/` directory are automatically indexed on server startup
 - The server communicates via stdio protocol with Cursor
 
+
+
+
+
+

@@ -25,3 +25,8 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 **Important**: Never commit your `.env` file to version control. It's already included in `.gitignore`.
 
+
+
+
+
+

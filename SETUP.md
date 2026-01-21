@@ -236,3 +236,8 @@ If you encounter any issues, please check:
 2. The `.cursorrules` file for additional context
 3. The original repository: https://github.com/patchy631/ai-engineering-hub/tree/main/cursor_linkup_mcp
 
+
+
+
+
+
