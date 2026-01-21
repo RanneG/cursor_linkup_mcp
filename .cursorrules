@@ -5,14 +5,56 @@ This is a custom MCP (Model Context Protocol) server that integrates with Cursor
 1. **Web Search**: Deep web searches using Linkup API
 2. **RAG (Retrieval Augmented Generation)**: Query documents using LlamaIndex with Ollama
 
+---
+
+## 🔗 Owner's GitHub Ecosystem
+
+**GitHub Profile**: https://github.com/RanneG
+
+### Reusable Libraries (Use These in New Projects!)
+
+| Repository | Purpose | Install/Clone |
+|------------|---------|---------------|
+| **[chatbot-rag-core](https://github.com/RanneG/chatbot-rag-core)** | Reusable Python RAG chatbot library using Ollama (FREE, local AI) | `pip install git+https://github.com/RanneG/chatbot-rag-core.git` |
+| **[chatbot-api-server](https://github.com/RanneG/chatbot-api-server)** | Production-ready Docker API server for chatbots | `git clone https://github.com/RanneG/chatbot-api-server.git` |
+
+#### Quick Usage - chatbot-rag-core:
+```python
+from chatbot_rag import ChatbotAPI
+
+chatbot = ChatbotAPI()
+await chatbot.initialize("./documents")
+response = await chatbot.chat("Your question here")
+```
+
+### Other Repositories
+
+| Repository | Description | Tech |
+|------------|-------------|------|
+| **[cursor_linkup_mcp](https://github.com/RanneG/cursor_linkup_mcp)** | This repo - Cursor IDE MCP integration | Python |
+| **[MineSentry](https://github.com/RanneG/MineSentry)** | Mining/monitoring project | Python |
+| **[Arbit](https://github.com/RanneG/Arbit)** | Arbitrage project | TypeScript |
+| **[pixel-portfolio](https://github.com/RanneG/pixel-portfolio)** | Portfolio website | TypeScript |
+| **[Country-Data-API](https://github.com/RanneG/Country-Data-API)** | CloudFormation IAC for deploying applications | AWS/CloudFormation |
+| **[MSC-Final](https://github.com/RanneG/MSC-Final)** | VR/AR Masters dissertation project | VR/AR |
+
+### When Building New Features:
+- **Need a chatbot?** → Use `chatbot-rag-core`
+- **Need production API?** → Use `chatbot-api-server`
+- **Need Discord bot?** → Consider creating `discord-chatbot` repo using `chatbot-rag-core`
+- **Need web search in Cursor?** → Use the `web_search` MCP tool
+- **Need document Q&A in Cursor?** → Use the `rag` MCP tool
+
+---
+
 ## Setup Instructions
 
 ### Prerequisites
 - Python 3.12 or higher
 - [uv](https://github.com/astral-sh/uv) package manager
 - [Ollama](https://ollama.ai/) installed locally with llama3.2 model
-- Linkup API key from https://www.linkup.so/
-- OpenAI API key
+- Linkup API key from https://www.linkup.so/ (optional - for web search)
+- OpenAI API key (optional)
 
 ### Installation Steps
 
@@ -35,20 +77,20 @@ This is a custom MCP (Model Context Protocol) server that integrates with Cursor
    ```
 
 4. **Configure Cursor to use this MCP server**:
-   Add to your Cursor settings (`.cursor/mcp.json` or similar):
+   Add to `C:\Users\ranne\.cursor\mcp.json`:
    ```json
    {
      "mcpServers": {
        "linkup-server": {
-         "command": "uv",
-         "args": ["run", "python", "server.py"],
-         "cwd": "/path/to/cursor_linkup_mcp"
+         "command": "C:\\Users\\ranne\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+         "args": ["-m", "uv", "run", "--directory", "C:\\Users\\ranne\\Cursor\\cursor_linkup_mcp", "python", "server.py"],
+         "cwd": "C:\\Users\\ranne\\Cursor\\cursor_linkup_mcp"
        }
      }
    }
    ```
 
-### Available Tools
+### Available MCP Tools
 
 1. **web_search(query: str)**: Search the web using Linkup API
    - Returns sourced answers with citations
@@ -67,9 +109,10 @@ This is a custom MCP (Model Context Protocol) server that integrates with Cursor
 - `.env`: Environment variables (not tracked in git)
 
 ### Development Notes
-- The RAG workflow uses Ollama's llama3.2 model locally
+- The RAG workflow uses Ollama's llama3.2 model locally (FREE!)
 - Documents in the `data/` directory are automatically indexed on server startup
 - The server communicates via stdio protocol with Cursor
+- Web search requires Linkup API key, but RAG works without any API keys
 
 
 
