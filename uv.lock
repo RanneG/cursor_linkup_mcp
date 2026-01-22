@@ -262,14 +262,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ipykernel", specifier = ">=6.29.5" },
-    { name = "linkup-sdk", specifier = ">=0.2.4" },
-    { name = "llama-index", specifier = ">=0.12.25" },
-    { name = "llama-index-embeddings-huggingface", specifier = ">=0.5.2" },
-    { name = "llama-index-llms-ollama", specifier = ">=0.5.3" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.5.0" },
-    { name = "nest-asyncio", specifier = ">=1.6.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "ipykernel", specifier = ">=6.29.5,<7.0" },
+    { name = "linkup-sdk", specifier = ">=0.2.4,<0.3" },
+    { name = "llama-index", specifier = ">=0.12.25,<0.13" },
+    { name = "llama-index-embeddings-huggingface", specifier = ">=0.5.2,<0.6" },
+    { name = "llama-index-llms-ollama", specifier = ">=0.5.3,<0.6" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.5.0,<2.0" },
+    { name = "nest-asyncio", specifier = ">=1.6.0,<2.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0,<2.0" },
 ]
 
 [[package]]
