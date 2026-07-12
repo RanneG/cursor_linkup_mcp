@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from nami_build.agent_runner import build_prompt, git_branch_name
 from nami_build.queue import BuildJob, BuildQueue, JobStatus
+from nami_build.worker import process_job, resolve_repo_path
 
 
 class BuildQueueTests(unittest.TestCase):
@@ -52,6 +53,24 @@ class BuildPromptTests(unittest.TestCase):
         self.assertTrue(git_branch_name("abcd1234efgh").startswith("nami/build-"))
 
 
+class BuildWorkerTests(unittest.TestCase):
+    def test_resolve_repo_rejects_absolute_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                resolve_repo_path(tmp)
+
+    def test_invalid_repo_job_fails_without_running_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp))
+            job = q.enqueue("test task", repo="/tmp")
+
+            finished = process_job(q, job)
+
+            self.assertEqual(finished.status, JobStatus.FAILED)
+            self.assertIn("Unknown repo", finished.error)
+            self.assertEqual(len(list((Path(tmp) / "running").glob("*.json"))), 0)
+
+
 class BuildHttpTests(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -86,6 +105,27 @@ class BuildHttpTests(unittest.TestCase):
             self.assertTrue(data["ok"])
             self.assertEqual(data["job"]["task"], "Add route")
             self.assertEqual(len(q.pending_jobs()), 1)
+
+    @patch("nami_build.http._auth_ok", return_value=True)
+    def test_enqueue_rejects_path_repo(self, _mock_auth):
+        from nami_build.http import create_app
+
+        q = BuildQueue(root=self.queue_root)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("nami_build.http.BuildQueue", return_value=q):
+                app = create_app(start_worker=False)
+                client = app.test_client()
+                resp = client.post(
+                    "/api/build/enqueue",
+                    json={"task": "Add route", "repo": tmp},
+                    headers={"Authorization": "Bearer test-secret"},
+                )
+
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertFalse(data["ok"])
+        self.assertEqual(data["error"], "unknown repo")
+        self.assertEqual(len(q.pending_jobs()), 0)
 
 
 if __name__ == "__main__":

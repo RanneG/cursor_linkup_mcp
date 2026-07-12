@@ -28,18 +28,25 @@ REPO_PATHS: dict[str, Path] = {
 }
 
 
+def allowed_repo_names() -> tuple[str, ...]:
+    return tuple(sorted(REPO_PATHS))
+
+
 def resolve_repo_path(repo: str) -> Path:
     if repo in REPO_PATHS:
         return REPO_PATHS[repo]
-    override = Path(repo)
-    if override.is_dir():
-        return override.resolve()
     raise ValueError(f"Unknown repo: {repo}")
 
 
 def process_job(queue: BuildQueue, job: BuildJob) -> BuildJob:
+    try:
+        cwd = resolve_repo_path(job.repo)
+    except ValueError as exc:
+        job.error = str(exc)
+        job.result_summary = str(exc)
+        return queue.move(job, JobStatus.FAILED)
+
     queue.move(job, JobStatus.RUNNING)
-    cwd = resolve_repo_path(job.repo)
     branch = git_branch_name(job.id)
     job.branch = branch
 

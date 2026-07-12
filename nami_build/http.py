@@ -19,7 +19,7 @@ except ImportError as exc:
     ) from exc
 
 from nami_build.queue import BuildQueue, JobStatus
-from nami_build.worker import BuildWorker
+from nami_build.worker import BuildWorker, allowed_repo_names
 
 log = logging.getLogger(__name__)
 
@@ -77,10 +77,23 @@ def create_app(*, start_worker: bool = True) -> Flask:
         if len(task) > 8000:
             return jsonify({"ok": False, "error": "task too long"}), 400
 
+        repo = str(body.get("repo", "linkup_mcp")).strip() or "linkup_mcp"
+        if repo not in allowed_repo_names():
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "unknown repo",
+                        "allowed_repos": list(allowed_repo_names()),
+                    }
+                ),
+                400,
+            )
+
         job = queue.enqueue(
             task,
             source=str(body.get("source", "telegram")),
-            repo=str(body.get("repo", "linkup_mcp")),
+            repo=repo,
             turn_cap=int(body.get("turn_cap", 8)),
         )
         log.info("Enqueued build job %s from %s", job.id, job.source)
