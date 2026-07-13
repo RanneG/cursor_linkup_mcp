@@ -13,7 +13,7 @@ See [SURFACE_MAP.md](./SURFACE_MAP.md) for what belongs on Mac vs PC.
 | 1 | **Hermes voice** — enable built-in talk-to-agent mode | Hermes | ~1–2h | Luke uses Hermes voice instead of typing; aligns with STATUS "Bella voice skill later" but native voice is first |
 | 2 | **Browser connect** — Chrome control from Hermes (`/browser` or equivalent) | Hermes | ~1–2h | "Controlling Chrome" on the Mac mini host; document allowlist + security posture |
 | 3 | **Sub-agents + skills** — main Nami + scoped workers (e.g. research, build notes) | Hermes | ~2h | Luke's "forklift to sub-agent" pattern; use Hermes skills/connectors, not Claude-only agents |
-| 4 | **Daily brief routine** — cron/heartbeat that prepends Telegram context | Hermes | ~1–2h | Skill spec: [daily-brief-loop.md](../../hermes-nami/skills/daily-brief-loop.md) + [loop-checker.md](../../hermes-nami/skills/loop-checker.md); **first closed loop** per [LOOP_ENGINEERING.md](./LOOP_ENGINEERING.md) |
+| 4 | **Daily brief routine** — cron/heartbeat that prepends Telegram context | Hermes | ~1–2h | Skill spec: [brief](../../hermes-nami/skills/brief/SKILL.md) + [loop-checker](../../hermes-nami/skills/loop-checker/SKILL.md); **first closed loop** per [LOOP_ENGINEERING.md](./LOOP_ENGINEERING.md) |
 | 5 | **Gateway reliability** — `hermes gateway install` (launchd) | Hermes | ~1h | Already on [STATUS.md](./STATUS.md) todo; blocks 24/7 brief |
 
 ## Design / build lane (PC — Cursor)
