@@ -1,8 +1,8 @@
 # Hermes + Nami on Mac (optional / legacy)
 
-> **Primary runtime is now the Linux VPS** — see **[VPS_SETUP.md](./VPS_SETUP.md)**. Use this doc only if you keep Hermes on a MacBook instead of (or alongside) the VPS. Do **not** run two Telegram gateways for the same Nami bot.
+> **Primary runtime is now the Windows PC** — see **[PC_SETUP.md](./PC_SETUP.md)**. The VPS is a future 24/7 migration target, not the current host. Use this doc only if you turn the Mac back into the Hermes runtime. Do **not** run two Telegram gateways for the same Nami bot.
 
-**Hermes on Mac was the original host.** Windows PC = Cursor + linkup_mcp (build-time Nami). Use runtime Nami from PC via **Telegram** (through VPS) or **SSH** to Mac/VPS.
+**Hermes on Mac was the original host.** Windows PC now runs Cursor + linkup_mcp + Hermes gateway while it is on. If the Mac becomes active again, use runtime Nami from PC via **Telegram** or **SSH** to the Mac.
 
 ## Architecture (legacy Mac host)
 
@@ -49,10 +49,11 @@ Assumes repos beside each other (`~/Cursor/linkup_mcp`, `~/Cursor/supplyme-crew`
 LINKUP=~/Cursor/linkup_mcp
 SUPPLY=~/Cursor/supplyme-crew
 
-mkdir -p ~/.hermes/skills
+mkdir -p ~/.hermes/skills/weekly-focus
 cp "$LINKUP/hermes-nami/SOUL.md" ~/.hermes/SOUL.md
 cp "$LINKUP/hermes-nami/AGENTS.md" ~/.hermes/AGENTS.md
-cp "$SUPPLY/skills/weekly-focus.md" ~/.hermes/skills/
+# Prefer scripts/install-nami-hermes.sh; manual skills must use <name>/SKILL.md.
+cp "$SUPPLY/skills/weekly-focus.md" ~/.hermes/skills/weekly-focus/SKILL.md
 ```
 
 Or run from linkup_mcp:
