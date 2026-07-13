@@ -56,7 +56,7 @@ Tools: **`web_search`** (Linkup key in `.env`), **`rag`** (local docs under `dat
 |------|------|
 | Multi-file features, Stitch/Tauri, inline review | **Cursor** |
 | CI until green, reel → inbox, git worktree slices | **Claude Code** |
-| Daily brief, Telegram, scheduled memory | **Hermes (Mac)** |
+| Daily brief, Telegram, scheduled memory | **Hermes (Windows PC now; VPS later)** |
 
 ### Lane A — CI loop (start here)
 
@@ -113,4 +113,4 @@ Track: minutes to green, intervention count, “would use again?”
 
 - **`CLAUDE.md`** — agent instructions at repo root
 - **`scripts/Start-ClaudeCiLoop.ps1`** — prefilled CI loop launcher
-- **`hermes-nami/skills/loop-checker.md`** — checker format before “done”
+- **`hermes-nami/skills/loop-checker/SKILL.md`** — checker format before “done”

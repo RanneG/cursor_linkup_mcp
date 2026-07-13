@@ -65,6 +65,20 @@ cd C:\Users\ranne\Cursor\cursor_linkup_mcp
 
 This copies SOUL/skills/memories, syncs RAG corpus, registers linkup MCP, runs verify.
 
+### Installed skill layout
+
+Hermes reads skills from one folder per command:
+
+```text
+%LOCALAPPDATA%\hermes\skills\brief\SKILL.md
+%LOCALAPPDATA%\hermes\skills\loop-checker\SKILL.md
+%LOCALAPPDATA%\hermes\skills\linkup-mcp\SKILL.md
+%LOCALAPPDATA%\hermes\skills\mobile-build-request\SKILL.md
+%LOCALAPPDATA%\hermes\skills\model-routing\SKILL.md
+```
+
+Source files live in `hermes-nami/skills/<name>/SKILL.md`. The installer removes older flat skill files such as `daily-brief-loop.md`, so use commands like `/brief` and cron flags like `--skill brief`.
+
 ---
 
 ## 4. Telegram gateway

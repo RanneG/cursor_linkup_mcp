@@ -34,8 +34,8 @@ One **Nami** personality. **Windows PC** = runtime + build (for now). **VPS** = 
 
 | Item | Status |
 |------|--------|
-| Hermes on PC (default = Nami) | **Todo** — [PC_SETUP.md](./PC_SETUP.md) |
-| Telegram Nami while PC on | Target mode |
+| Hermes on PC (default = Nami) | Live target — [PC_SETUP.md](./PC_SETUP.md) |
+| Telegram Nami while PC on | Live when gateway is running |
 | Telegram Nami while PC off | **Deferred** — [VPS_MIGRATION.md](./VPS_MIGRATION.md) |
 | PC mobile build bridge | Done — [MOBILE_BUILD.md](./MOBILE_BUILD.md) |
 | Mac runtime | Retired unless you turn Mac back on |

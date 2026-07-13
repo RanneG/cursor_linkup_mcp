@@ -2,7 +2,7 @@
 
 Three Telegram bullets every morning (or on demand): **Build · Products · This week**. Read-only, RAG + memory grounded.
 
-Skills: `hermes-nami/skills/daily-brief-loop.md` + `loop-checker.md`.
+Skills: `hermes-nami/skills/brief/SKILL.md` + `hermes-nami/skills/loop-checker/SKILL.md`.
 
 ---
 
@@ -30,6 +30,15 @@ notepad $env:LOCALAPPDATA\hermes\memories\MEMORY.md
 ```
 
 Add 2–3 lines under **Active repos** or a new **This week** section with what you're actually working on. The brief is only as good as this file + RAG corpus.
+
+Installed Hermes layout after `install-nami-hermes.ps1`:
+
+```text
+%LOCALAPPDATA%\hermes\skills\brief\SKILL.md
+%LOCALAPPDATA%\hermes\skills\loop-checker\SKILL.md
+```
+
+Legacy flat files such as `daily-brief-loop.md` are removed by the installer. Use `/brief` in Telegram and `--skill brief` in cron commands.
 
 ---
 
@@ -62,7 +71,7 @@ Hermes registers skills as `/brief`, `/loop-checker`, etc. after `install-nami-h
 Fallback prompt:
 
 ```text
-Run daily-brief-loop skill exactly. Use loop-checker before sending. Read-only. Turn cap 8.
+Run the brief skill exactly. Use loop-checker before sending. Read-only. Turn cap 8.
 ```
 
 **Pass looks like:**
@@ -93,7 +102,7 @@ cd C:\Users\ranne\Cursor\cursor_linkup_mcp
 Or ask Nami in Telegram:
 
 ```text
-/cron add "every weekday at 07:30" "Run daily-brief-loop and loop-checker skills. Read-only daily brief to Telegram. Turn cap 8." --skill daily-brief-loop --skill loop-checker --name nami-daily-brief --deliver telegram
+/cron add "every weekday at 07:30" "Run brief and loop-checker skills. Read-only daily brief to Telegram. Turn cap 8." --skill brief --skill loop-checker --name nami-daily-brief --deliver telegram
 ```
 
 List / test:
@@ -121,6 +130,7 @@ After the brief ships 3 days in a row:
 | Symptom | Fix |
 |---------|-----|
 | No reply to `/brief` | `hermes gateway status`; restart gateway |
+| `/brief` is unknown | Re-run `.\scripts\install-nami-hermes.ps1`, restart gateway, then check `/commands` |
 | Invented todos | Strengthen `MEMORY.md`; brief must cite RAG/memory |
 | Cron silent | `TELEGRAM_HOME_CHANNEL` unset; PC asleep at 07:30 |
 | Too long bullets | Re-run — skill caps at 120 chars per bullet |
