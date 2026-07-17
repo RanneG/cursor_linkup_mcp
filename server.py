@@ -4,6 +4,10 @@ import os
 from typing import Optional
 from dotenv import load_dotenv
 from linkup import LinkupClient
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
 from llama_index.llms.ollama import Ollama
 from agents import AgentOrchestrator, AgentType
 from mcp.server.fastmcp import FastMCP
@@ -21,6 +25,15 @@ client = None
 if linkup_api_key:
     client = LinkupClient()
 
+# Initialize TavilyClient if API key is available and library is installed
+tavily_client = None
+tavily_api_key = os.getenv('TAVILY_API_KEY')
+if tavily_api_key and TavilyClient is not None:
+    tavily_client = TavilyClient(api_key=tavily_api_key)
+
+# SEARCH_PROVIDER selects the active backend: "linkup" (default) or "tavily"
+search_provider = (os.getenv('SEARCH_PROVIDER') or 'linkup').strip().lower()
+
 # Initialize LLM for agents (reuse the same Ollama instance)
 agent_llm = Ollama(model="llama3.2")
 
@@ -30,9 +43,16 @@ agent_orchestrator: Optional[AgentOrchestrator] = None
 @mcp.tool()
 def web_search(query: str) -> str:
     """Search the web for the given query."""
+    if search_provider == "tavily":
+        if tavily_client is None:
+            return "Error: TAVILY_API_KEY not set or tavily-python not installed. Install: pip install -e '.[tavily]'"
+        response = tavily_client.search(query=query, search_depth="basic", max_results=5)
+        return str(response)
+
+    # Default: Linkup
     if client is None:
         return "Error: LINKUP_API_KEY not set. Please add it to your .env file to use web search."
-    
+
     search_response = client.search(
         query=query,
         depth="standard",  # "standard" or "deep"
@@ -176,6 +196,13 @@ def _setup_agent_orchestrator():
     
     # Create tool wrappers that the agents can call
     def web_search_tool(query: str) -> str:
+        if search_provider == "tavily":
+            if tavily_client is None:
+                return "Error: Web search not available (TAVILY_API_KEY not set or tavily-python not installed)"
+            response = tavily_client.search(query=query, search_depth="basic", max_results=5)
+            return str(response)
+
+        # Default: Linkup
         if client is None:
             return "Error: Web search not available (LINKUP_API_KEY not set)"
         search_response = client.search(

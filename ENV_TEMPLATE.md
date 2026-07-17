@@ -8,6 +8,12 @@ Python install profiles (see **README** Quick Start): default **`uv sync`** is M
 # Linkup API Key — get your key from https://www.linkup.so/
 LINKUP_API_KEY=your_linkup_api_key_here
 
+# Tavily API Key — alternative search backend; get your key from https://app.tavily.com
+# TAVILY_API_KEY=your_tavily_api_key_here
+
+# Search provider selector — "linkup" (default) or "tavily"
+# SEARCH_PROVIDER=linkup
+
 # OpenAI API Key — only if you wire features that need it
 OPENAI_API_KEY=your_openai_api_key_here
 
@@ -58,6 +64,13 @@ OPENAI_API_KEY=your_openai_api_key_here
 1. Visit https://www.linkup.so/
 2. Sign up and open the dashboard
 3. Create or copy your API key
+
+### Tavily API Key (optional — alternative to Linkup)
+
+1. Visit https://app.tavily.com and sign up (1,000 free credits/month)
+2. Copy your API key
+3. Add `TAVILY_API_KEY` to `.env` and set `SEARCH_PROVIDER=tavily`
+4. Install the extra: `uv sync --extra tavily`
 
 ### OpenAI API Key
 
