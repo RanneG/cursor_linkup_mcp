@@ -63,6 +63,10 @@ nami-build = [
     "flask>=3.0.0,<4.0",
     "requests>=2.31.0,<3",
 ]
+# Tavily web search as alternative to Linkup. Set SEARCH_PROVIDER=tavily to activate.
+tavily = [
+    "tavily-python>=0.5.0,<1.0",
+]
 
 [project.scripts]
 elevenlabs-gen = "elevenlabs_toolkit.cli:main"
