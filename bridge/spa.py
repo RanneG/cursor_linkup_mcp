@@ -47,6 +47,21 @@ def get_stitch_spa_dist() -> str | None:
     return root
 
 
+def safe_path_under(base: str, *parts: str) -> str | None:
+    """Return a resolved path only when the requested file stays under base.
+
+    Plain ``str.startswith`` is unsafe: a sibling like ``dist_evil`` matches prefix ``dist``.
+    """
+    try:
+        base_real = os.path.realpath(base)
+        candidate = os.path.realpath(os.path.join(base_real, *parts))
+        if os.path.commonpath([base_real, candidate]) != base_real:
+            return None
+        return candidate
+    except (OSError, ValueError):
+        return None
+
+
 def register_stitch_spa_routes(app: Flask) -> None:
     """Register /assets/* and SPA fallback when a dist path is configured (see stitch_gui.py). Safe to call twice."""
     global _spa_extra_routes_registered
@@ -61,11 +76,11 @@ def register_stitch_spa_routes(app: Flask) -> None:
         root = get_stitch_spa_dist()
         if not root:
             abort(404)
-        base = os.path.normpath(os.path.join(root, "assets"))
+        base = os.path.realpath(os.path.join(root, "assets"))
         if not os.path.isdir(base):
             abort(404)
-        candidate = os.path.normpath(os.path.join(base, rel))
-        if not candidate.startswith(base) or not os.path.isfile(candidate):
+        candidate = safe_path_under(base, rel)
+        if candidate is None or not os.path.isfile(candidate):
             abort(404)
         return send_file(candidate)
 
@@ -76,9 +91,8 @@ def register_stitch_spa_routes(app: Flask) -> None:
             abort(404)
         if path.startswith("api/"):
             abort(404)
-        candidate = os.path.normpath(os.path.join(root, path))
-        rootn = os.path.normpath(root)
-        if not candidate.startswith(rootn):
+        candidate = safe_path_under(root, path)
+        if candidate is None:
             abort(404)
         if os.path.isfile(candidate):
             return send_file(candidate)

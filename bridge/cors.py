@@ -12,7 +12,7 @@ _DEFAULT_ALLOWED_ORIGINS = (
 
 
 def parse_allowed_origins(raw: str) -> set[str]:
-    origins = {(item or "").strip() for item in raw.split(",")}
+    origins = {(item or "").strip().rstrip("/") for item in raw.split(",")}
     return {origin for origin in origins if origin}
 
 

@@ -18,7 +18,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 # STITCH_WHISPER_MODEL=tiny.en   # faster-whisper model id (e.g. base.en, small.en); first run downloads weights
 # STITCH_WHISPER_DEVICE=cpu      # cpu or cuda
 # STITCH_WHISPER_COMPUTE_TYPE=int8
-# STITCH_ALLOWED_ORIGINS=http://127.0.0.1:1420,http://localhost:1420
+# STITCH_ALLOWED_ORIGINS=http://127.0.0.1:1420,http://localhost:1420  # CORS + OAuth client_origin allowlist
 # STITCH_DESKTOP_DIST=C:/path/to/stitch-app/apps/desktop/dist   # stitch_gui.py: serve built SPA from same process
 
 # Optional: include debug_retrieval_cards on rag_stitch / bridge fallback responses
