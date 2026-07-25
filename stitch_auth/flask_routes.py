@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 import time
 from typing import Any
@@ -31,12 +32,65 @@ from stitch_auth.store import (
 
 logger = logging.getLogger(__name__)
 
+# Keep in sync with bridge.cors defaults — OAuth postMessage / hash redirect must not
+# deliver session_id to an attacker-controlled origin.
+_DEFAULT_ALLOWED_ORIGINS = (
+    "http://127.0.0.1:1420,http://localhost:1420,http://127.0.0.1:5173,http://localhost:5173,"
+    "http://127.0.0.1:8765,http://localhost:8765"
+)
+_DEFAULT_CLIENT_ORIGIN = "http://localhost:1420"
+
 
 def _session_from_request() -> str | None:
     auth = (request.headers.get("Authorization") or "").strip()
     if auth.lower().startswith("bearer "):
         return auth[7:].strip() or None
     return (request.args.get("session") or "").strip() or None
+
+
+def _parse_allowed_origins(raw: str) -> set[str]:
+    origins = {(item or "").strip().rstrip("/") for item in raw.split(",")}
+    return {origin for origin in origins if origin}
+
+
+def _allowed_origins_for_app(app: Flask) -> set[str]:
+    configured = app.config.get("STITCH_ALLOWED_ORIGINS")
+    if isinstance(configured, set):
+        return {str(origin).strip().rstrip("/") for origin in configured if str(origin).strip()}
+    if isinstance(configured, (list, tuple)):
+        return {str(origin).strip().rstrip("/") for origin in configured if str(origin).strip()}
+    if isinstance(configured, str) and configured.strip():
+        return _parse_allowed_origins(configured)
+    return _parse_allowed_origins(os.getenv("STITCH_ALLOWED_ORIGINS", _DEFAULT_ALLOWED_ORIGINS))
+
+
+def _normalize_client_origin(raw_origin: str) -> str | None:
+    raw = (raw_origin or "").strip().rstrip("/")
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+        parsed.port  # raises ValueError for malformed ports
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        return None
+    host = (parsed.hostname or "").lower()
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = f"{host}:{parsed.port}" if parsed.port is not None else host
+    return urlunparse((parsed.scheme.lower(), netloc, "", "", "", "")).rstrip("/")
+
+
+def _resolve_client_origin(raw_origin: str | None, allowed_origins: set[str]) -> str | None:
+    candidate = _normalize_client_origin(raw_origin or _DEFAULT_CLIENT_ORIGIN)
+    if not candidate:
+        return None
+    return candidate if candidate in allowed_origins else None
 
 
 def _redirect_origin_ipv4(target_origin: str) -> str:
@@ -139,9 +193,10 @@ def register_stitch_auth_routes(app: Flask) -> None:
                 503,
             )
         body = request.get_json(silent=True) or {}
-        client_origin = (body.get("client_origin") or request.headers.get("Origin") or "http://localhost:1420").strip()
-        if not client_origin.startswith("http"):
-            client_origin = "http://localhost:1420"
+        raw_origin = body.get("client_origin") or request.headers.get("Origin") or _DEFAULT_CLIENT_ORIGIN
+        client_origin = _resolve_client_origin(str(raw_origin), _allowed_origins_for_app(app))
+        if not client_origin:
+            return jsonify({"ok": False, "error": "untrusted_client_origin"}), 400
         linking = _session_from_request()
         state = secrets.token_urlsafe(32)
         verifier, challenge = google_client.pkce_pair()
@@ -169,7 +224,8 @@ def register_stitch_auth_routes(app: Flask) -> None:
         state = request.args.get("state") or ""
         code = request.args.get("code") or ""
         pending = oauth_pending_pop(state) if state else None
-        origin = (pending or {}).get("client_origin") or "http://localhost:1420"
+        raw_pending_origin = (pending or {}).get("client_origin") or _DEFAULT_CLIENT_ORIGIN
+        origin = _resolve_client_origin(str(raw_pending_origin), _allowed_origins_for_app(app)) or _DEFAULT_CLIENT_ORIGIN
         if err:
             payload = {"ok": False, "error": err, "error_description": request.args.get("error_description") or ""}
             return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}

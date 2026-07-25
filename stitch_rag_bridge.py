@@ -65,6 +65,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 # Large enroll POSTs (multiple base64 JPEGs); explicit cap avoids silent proxy/Werkzeug oddities on huge bodies.
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("STITCH_RAG_BRIDGE_MAX_BODY_BYTES", str(64 * 1024 * 1024)))
+# Shared with OAuth client_origin allowlist (stitch_auth) so CORS and session delivery agree.
+app.config["STITCH_ALLOWED_ORIGINS"] = cors.ALLOWED_ORIGINS
 
 cors.init_app(app)
 errors.init_app(app)

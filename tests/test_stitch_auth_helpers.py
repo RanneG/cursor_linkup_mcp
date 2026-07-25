@@ -11,7 +11,11 @@ except ImportError:
     _HAS_FLASK = False
 
 if _HAS_FLASK:
-    from stitch_auth.flask_routes import _redirect_origin_ipv4
+    from stitch_auth.flask_routes import (
+        _normalize_client_origin,
+        _redirect_origin_ipv4,
+        _resolve_client_origin,
+    )
 
 
 @unittest.skipUnless(_HAS_FLASK, "stitch-bridge extra not installed")
@@ -31,6 +35,16 @@ class RedirectOriginIpv4Tests(unittest.TestCase):
 
     def test_missing_scheme_gets_http(self) -> None:
         self.assertEqual(_redirect_origin_ipv4("localhost:8080"), "http://127.0.0.1:8080")
+
+
+@unittest.skipUnless(_HAS_FLASK, "stitch-bridge extra not installed")
+class ClientOriginAllowlistHelperTests(unittest.TestCase):
+    def test_normalize_strips_trailing_slash(self) -> None:
+        self.assertEqual(_normalize_client_origin("http://127.0.0.1:8765/"), "http://127.0.0.1:8765")
+
+    def test_resolve_defaults_to_localhost_when_allowed(self) -> None:
+        allowed = {"http://localhost:1420"}
+        self.assertEqual(_resolve_client_origin(None, allowed), "http://localhost:1420")
 
 
 if __name__ == "__main__":
