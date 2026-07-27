@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -37,44 +38,67 @@ def resolve_repo_path(repo: str) -> Path:
     raise ValueError(f"Unknown repo: {repo}")
 
 
+def fail_stranded_running(queue: BuildQueue, reason: str) -> list[BuildJob]:
+    """Mark any jobs left in running/ as failed (e.g. after worker subprocess timeout/crash)."""
+    running_dir = queue.root / JobStatus.RUNNING.value
+    failed: list[BuildJob] = []
+    for path in sorted(running_dir.glob("*.json")):
+        try:
+            job = BuildJob.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            log.warning("Skipping unreadable running job %s: %s", path.name, exc)
+            continue
+        job.error = reason
+        job.result_summary = reason
+        failed.append(queue.move(job, JobStatus.FAILED))
+        log.error("Marked stranded build job %s as failed: %s", job.id, reason)
+    return failed
+
+
 def process_job(queue: BuildQueue, job: BuildJob) -> BuildJob:
     queue.move(job, JobStatus.RUNNING)
-    cwd = resolve_repo_path(job.repo)
-    branch = git_branch_name(job.id)
-    job.branch = branch
+    try:
+        cwd = resolve_repo_path(job.repo)
+        branch = git_branch_name(job.id)
+        job.branch = branch
 
-    branch_ok, branch_msg = ensure_branch(cwd, branch)
-    if not branch_ok:
-        job.error = branch_msg
-        job.result_summary = f"Branch setup failed: {branch_msg}"
-        return queue.move(job, JobStatus.FAILED)
+        branch_ok, branch_msg = ensure_branch(cwd, branch)
+        if not branch_ok:
+            job.error = branch_msg
+            job.result_summary = f"Branch setup failed: {branch_msg}"
+            return queue.move(job, JobStatus.FAILED)
 
-    agent = run_cursor_agent(job.task, cwd, turn_cap=job.turn_cap)
-    if not agent.ok:
-        job.error = agent.detail or agent.summary
+        agent = run_cursor_agent(job.task, cwd, turn_cap=job.turn_cap)
+        if not agent.ok:
+            job.error = agent.detail or agent.summary
+            job.result_summary = agent.summary
+            return queue.move(job, JobStatus.FAILED)
+
+        tests_ok, test_out = run_pytest(cwd)
+        job.test_output = test_out
+        diff = git_summary(cwd)
+
         job.result_summary = agent.summary
+        if diff:
+            job.result_summary += f"\n\n{diff}"
+
+        if not tests_ok:
+            job.error = "pytest failed after agent run"
+            job.result_summary += f"\n\npytest:\n{test_out[-1500:]}"
+            return queue.move(job, JobStatus.FAILED)
+
+        job.result_summary = (
+            f"Build ready for review on `{branch}`.\n"
+            f"{branch_msg}\n\n"
+            f"{agent.summary}\n\n"
+            f"{diff}"
+        ).strip()
+        return queue.move(job, JobStatus.COMPLETED)
+    except Exception as exc:  # noqa: BLE001 — never leave jobs stuck in running/
+        log.exception("Build job %s crashed", job.id)
+        job.error = str(exc) or exc.__class__.__name__
+        job.result_summary = f"Job failed unexpectedly: {job.error}"
         return queue.move(job, JobStatus.FAILED)
-
-    tests_ok, test_out = run_pytest(cwd)
-    job.test_output = test_out
-    diff = git_summary(cwd)
-
-    job.result_summary = agent.summary
-    if diff:
-        job.result_summary += f"\n\n{diff}"
-
-    if not tests_ok:
-        job.error = "pytest failed after agent run"
-        job.result_summary += f"\n\npytest:\n{test_out[-1500:]}"
-        return queue.move(job, JobStatus.FAILED)
-
-    job.result_summary = (
-        f"Build ready for review on `{branch}`.\n"
-        f"{branch_msg}\n\n"
-        f"{agent.summary}\n\n"
-        f"{diff}"
-    ).strip()
-    return queue.move(job, JobStatus.COMPLETED)
 
 
 def run_once(queue: BuildQueue | None = None) -> BuildJob | None:
@@ -118,6 +142,7 @@ class BuildWorker:
                     )
             except subprocess.TimeoutExpired:
                 log.error("Build job subprocess timed out")
+                fail_stranded_running(self.queue, "Build job subprocess timed out")
             except Exception:
                 log.exception("Build worker error")
             self._stop.wait(self.poll_seconds)

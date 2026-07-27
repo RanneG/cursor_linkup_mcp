@@ -41,13 +41,20 @@ When finished, summarize: files changed, test result, suggested branch name.
 def run_pytest(cwd: Path, timeout: int = 300) -> tuple[bool, str]:
     targets = os.getenv("NAMI_BUILD_PYTEST", "tests/test_nami_build.py").strip()
     python = os.getenv("NAMI_BUILD_PYTHON", sys.executable)
-    proc = subprocess.run(
-        [python, "-m", "pytest", "-q", "--tb=no", *targets.split()],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            [python, "-m", "pytest", "-q", "--tb=no", *targets.split()],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        out = ((exc.stdout or "") + (exc.stderr or "")).strip() if isinstance(exc.stdout, str) else ""
+        detail = f"pytest timed out after {timeout}s"
+        if out:
+            detail = f"{detail}\n{out[-3500:]}"
+        return False, detail
     out = (proc.stdout or "") + (proc.stderr or "")
     return proc.returncode == 0, out.strip()[-4000:]
 

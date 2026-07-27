@@ -1,11 +1,11 @@
-import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from nami_build.agent_runner import build_prompt, git_branch_name
-from nami_build.queue import BuildJob, BuildQueue, JobStatus
+from nami_build.queue import BuildQueue, JobStatus
 
 
 class BuildQueueTests(unittest.TestCase):
@@ -50,6 +50,57 @@ class BuildPromptTests(unittest.TestCase):
 
     def test_branch_name(self):
         self.assertTrue(git_branch_name("abcd1234efgh").startswith("nami/build-"))
+
+
+class BuildWorkerRecoveryTests(unittest.TestCase):
+    def test_fail_stranded_running_marks_jobs_failed(self):
+        from nami_build.worker import fail_stranded_running
+
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp))
+            job = q.enqueue("long agent run")
+            q.move(job, JobStatus.RUNNING)
+
+            failed = fail_stranded_running(q, "Build job subprocess timed out")
+
+            self.assertEqual(len(failed), 1)
+            loaded = q.get(job.id)
+            assert loaded is not None
+            self.assertEqual(loaded.status, JobStatus.FAILED)
+            self.assertIn("timed out", loaded.error)
+            self.assertEqual(len(list((Path(tmp) / "running").glob("*.json"))), 0)
+            self.assertEqual(len(list((Path(tmp) / "failed").glob("*.json"))), 1)
+
+    def test_process_job_crash_does_not_leave_running(self):
+        from nami_build.agent_runner import AgentRunResult
+        from nami_build.worker import process_job
+
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp))
+            job = q.enqueue("boom", repo="linkup_mcp")
+
+            with (
+                patch("nami_build.worker.resolve_repo_path", return_value=Path(tmp)),
+                patch("nami_build.worker.ensure_branch", return_value=(True, "ok")),
+                patch(
+                    "nami_build.worker.run_cursor_agent",
+                    return_value=AgentRunResult(ok=True, summary="changed files"),
+                ),
+                patch("nami_build.worker.run_pytest", side_effect=RuntimeError("disk full")),
+            ):
+                finished = process_job(q, job)
+
+            self.assertEqual(finished.status, JobStatus.FAILED)
+            self.assertIn("disk full", finished.error)
+            self.assertEqual(len(list((Path(tmp) / "running").glob("*.json"))), 0)
+
+    def test_run_pytest_timeout_returns_failure(self):
+        from nami_build.agent_runner import run_pytest
+
+        with patch("nami_build.agent_runner.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="pytest", timeout=1)):
+            ok, out = run_pytest(Path("."), timeout=1)
+        self.assertFalse(ok)
+        self.assertIn("timed out", out)
 
 
 class BuildHttpTests(unittest.TestCase):
