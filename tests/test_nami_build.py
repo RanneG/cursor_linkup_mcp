@@ -41,6 +41,55 @@ class BuildQueueTests(unittest.TestCase):
             jobs = q.list_recent(limit=5)
             self.assertEqual(len(jobs), 2)
 
+    def test_move_keeps_job_if_destination_write_fails(self):
+        """Destination write happens before unlink; a failed write must not erase the job."""
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp))
+            job = q.enqueue("must survive write failure")
+            pending = Path(tmp) / "pending" / f"{job.id}.json"
+            self.assertTrue(pending.is_file())
+
+            original_write = q._write
+
+            def boom(job_arg, status):
+                if status == JobStatus.RUNNING:
+                    raise OSError("disk full")
+                return original_write(job_arg, status)
+
+            with patch.object(q, "_write", side_effect=boom):
+                with self.assertRaises(OSError):
+                    q.move(job, JobStatus.RUNNING)
+
+            surviving = q.get(job.id)
+            assert surviving is not None
+            self.assertEqual(surviving.status, JobStatus.PENDING)
+            self.assertTrue(pending.is_file())
+            self.assertFalse((Path(tmp) / "running" / f"{job.id}.json").is_file())
+
+    def test_move_crash_after_write_before_unlink_prefers_new_status(self):
+        """If both status files exist briefly, the job must remain readable as running."""
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp))
+            job = q.enqueue("mid-move crash")
+            pending = Path(tmp) / "pending" / f"{job.id}.json"
+            running = Path(tmp) / "running" / f"{job.id}.json"
+
+            job.status = JobStatus.RUNNING
+            job.result_summary = "partial"
+            q._write(job, JobStatus.RUNNING)
+            self.assertTrue(pending.is_file())
+            self.assertTrue(running.is_file())
+
+            loaded = q.get(job.id)
+            assert loaded is not None
+            self.assertEqual(loaded.status, JobStatus.RUNNING)
+            self.assertEqual(len(q.pending_jobs()), 0)
+
+            # Completing the move cleans the stale pending copy.
+            q.move(job, JobStatus.RUNNING)
+            self.assertFalse(pending.is_file())
+            self.assertTrue(running.is_file())
+
 
 class BuildPromptTests(unittest.TestCase):
     def test_prompt_includes_task(self):
