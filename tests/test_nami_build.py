@@ -1,11 +1,85 @@
-import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from nami_build.agent_runner import build_prompt, git_branch_name
-from nami_build.queue import BuildJob, BuildQueue, JobStatus
+from nami_build.agent_runner import AgentRunResult, build_prompt, ensure_branch, git_branch_name
+from nami_build.queue import BuildQueue, JobStatus
+
+
+def _init_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True, capture_output=True)
+    (root / "README.md").write_text("init\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=root, check=True, capture_output=True)
+
+
+class EnsureBranchTests(unittest.TestCase):
+    def test_dirty_working_tree_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_git_repo(root)
+            (root / "wip.txt").write_text("uncommitted\n", encoding="utf-8")
+
+            ok, msg = ensure_branch(root, "nami/build-deadbeef")
+
+            self.assertFalse(ok)
+            self.assertIn("dirty", msg.lower())
+            current = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            # Must not have switched/created the job branch while dirty.
+            self.assertNotEqual(current, "nami/build-deadbeef")
+
+    def test_clean_tree_creates_job_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_git_repo(root)
+
+            ok, msg = ensure_branch(root, "nami/build-cafebabe")
+
+            self.assertTrue(ok)
+            self.assertIn("nami/build-cafebabe", msg)
+            current = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            self.assertEqual(current, "nami/build-cafebabe")
+
+    def test_process_job_skips_agent_when_tree_dirty(self):
+        from nami_build.worker import process_job
+
+        with tempfile.TemporaryDirectory() as tmp:
+            q = BuildQueue(root=Path(tmp) / "queue")
+            job = q.enqueue("must not run on dirty tree")
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _init_git_repo(repo)
+            (repo / "wip.txt").write_text("local edits\n", encoding="utf-8")
+
+            with (
+                patch("nami_build.worker.resolve_repo_path", return_value=repo),
+                patch(
+                    "nami_build.worker.run_cursor_agent",
+                    return_value=AgentRunResult(ok=True, summary="should not run"),
+                ) as mock_agent,
+            ):
+                finished = process_job(q, job)
+
+            self.assertEqual(finished.status, JobStatus.FAILED)
+            self.assertIn("dirty", finished.error.lower())
+            mock_agent.assert_not_called()
+            self.assertEqual((repo / "wip.txt").read_text(encoding="utf-8"), "local edits\n")
 
 
 class BuildQueueTests(unittest.TestCase):
