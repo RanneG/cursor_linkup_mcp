@@ -66,8 +66,14 @@ def ensure_branch(cwd: Path, branch: str) -> tuple[bool, str]:
     current_proc = subprocess.run(["git", "branch", "--show-current"], cwd=cwd, capture_output=True, text=True)
     current = (current_proc.stdout or "").strip() or "HEAD"
 
+    # Fail closed: never launch the autonomous agent on a dirty tree or an unintended
+    # branch. Dirty WIP + Telegram enqueue was previously treated as success, so the
+    # agent interleaved edits with local work and could destroy uncommitted changes.
     if status.stdout.strip():
-        return True, f"Working tree dirty — staying on `{current}` (review diff in Cursor)"
+        return (
+            False,
+            f"Working tree dirty on `{current}` — commit or stash, then re-enqueue",
+        )
 
     create = subprocess.run(
         ["git", "checkout", "-b", branch],
@@ -83,7 +89,10 @@ def ensure_branch(cwd: Path, branch: str) -> tuple[bool, str]:
             text=True,
         )
         if checkout.returncode != 0:
-            return True, f"Using current branch `{current}` (could not create `{branch}`)"
+            return (
+                False,
+                f"Could not create or checkout `{branch}` (still on `{current}`)",
+            )
 
     return True, f"On branch `{branch}`"
 
