@@ -38,7 +38,9 @@ def resolve_repo_path(repo: str) -> Path:
 
 
 def process_job(queue: BuildQueue, job: BuildJob) -> BuildJob:
-    queue.move(job, JobStatus.RUNNING)
+    # Caller must claim via BuildQueue.claim_next() so only one worker owns this job.
+    if job.status != JobStatus.RUNNING:
+        queue.move(job, JobStatus.RUNNING)
     cwd = resolve_repo_path(job.repo)
     branch = git_branch_name(job.id)
     job.branch = branch
@@ -79,10 +81,9 @@ def process_job(queue: BuildQueue, job: BuildJob) -> BuildJob:
 
 def run_once(queue: BuildQueue | None = None) -> BuildJob | None:
     q = queue or BuildQueue()
-    pending = q.pending_jobs()
-    if not pending:
+    job = q.claim_next()
+    if job is None:
         return None
-    job = pending[0]
     log.info("Processing build job %s", job.id)
     return process_job(q, job)
 
