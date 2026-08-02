@@ -1,11 +1,13 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from nami_build.agent_runner import build_prompt, git_branch_name
 from nami_build.queue import BuildJob, BuildQueue, JobStatus
+from nami_build.worker import run_once
 
 
 class BuildQueueTests(unittest.TestCase):
@@ -40,6 +42,70 @@ class BuildQueueTests(unittest.TestCase):
             q.enqueue("two")
             jobs = q.list_recent(limit=5)
             self.assertEqual(len(jobs), 2)
+
+    def test_claim_next_is_exclusive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            q1 = BuildQueue(root=root)
+            q2 = BuildQueue(root=root)
+            job = q1.enqueue("exclusive claim task")
+
+            claimed1 = q1.claim_next()
+            claimed2 = q2.claim_next()
+
+            self.assertIsNotNone(claimed1)
+            assert claimed1 is not None
+            self.assertEqual(claimed1.id, job.id)
+            self.assertEqual(claimed1.status, JobStatus.RUNNING)
+            self.assertIsNone(claimed2)
+            self.assertFalse((root / "pending" / f"{job.id}.json").exists())
+            self.assertTrue((root / "running" / f"{job.id}.json").is_file())
+
+    def test_claim_next_concurrent_workers_single_winner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            q = BuildQueue(root=root)
+            job = q.enqueue("race task")
+            barrier = threading.Barrier(2)
+            winners: list[str] = []
+            lock = threading.Lock()
+
+            def worker() -> None:
+                local = BuildQueue(root=root)
+                barrier.wait(timeout=5)
+                claimed = local.claim_next()
+                if claimed is not None:
+                    with lock:
+                        winners.append(claimed.id)
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+
+            self.assertEqual(winners, [job.id])
+            self.assertEqual(len(q.pending_jobs()), 0)
+            loaded = q.get(job.id)
+            assert loaded is not None
+            self.assertEqual(loaded.status, JobStatus.RUNNING)
+
+    def test_run_once_uses_claim_next(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            q = BuildQueue(root=root)
+            job = q.enqueue("run once claim")
+
+            with patch("nami_build.worker.process_job") as process_job:
+                process_job.side_effect = lambda queue, claimed: claimed
+                claimed = run_once(q)
+
+            self.assertIsNotNone(claimed)
+            assert claimed is not None
+            self.assertEqual(claimed.id, job.id)
+            process_job.assert_called_once()
+            self.assertEqual(claimed.status, JobStatus.RUNNING)
+            self.assertIsNone(q.claim_next())
 
 
 class BuildPromptTests(unittest.TestCase):

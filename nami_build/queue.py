@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -144,6 +145,42 @@ class BuildQueue:
         job.updated_at = _now()
         self._write(job, new_status)
         return job
+
+    def claim_next(self) -> BuildJob | None:
+        """Atomically claim the oldest pending job for a single worker.
+
+        Uses directory rename as the compare-and-swap. Concurrent workers that
+        both saw the same pending file lose on rename/`FileNotFoundError` and
+        must not process the job.
+        """
+        pending_dir = self.root / JobStatus.PENDING.value
+        running_dir = self.root / JobStatus.RUNNING.value
+        running_dir.mkdir(parents=True, exist_ok=True)
+
+        for path in sorted(pending_dir.glob("*.json"), key=lambda x: x.stat().st_mtime):
+            dest = running_dir / path.name
+            try:
+                os.rename(path, dest)
+            except FileNotFoundError:
+                # Another worker already claimed or removed this pending file.
+                continue
+            except OSError:
+                # Destination already exists (common on Windows) — treat as claimed.
+                # Drop a stale pending duplicate left by a crashed status move.
+                path.unlink(missing_ok=True)
+                continue
+
+            try:
+                job = BuildJob.from_dict(json.loads(dest.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
+                # Leave the file under running/ for stranded-job recovery tooling.
+                continue
+
+            job.status = JobStatus.RUNNING
+            job.updated_at = _now()
+            self._write(job, JobStatus.RUNNING)
+            return job
+        return None
 
     def _write(self, job: BuildJob, status: JobStatus) -> None:
         path = self._path(job.id, status)
