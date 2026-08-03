@@ -12,6 +12,7 @@ from urllib.parse import urlparse, urlunparse
 from flask import Flask, jsonify, request
 
 from stitch_auth import google_client
+from stitch_auth.oauth_session import finalize_oauth_session
 from stitch_auth.store import (
     decrypt_refresh,
     google_account_by_email,
@@ -200,18 +201,9 @@ def register_stitch_auth_routes(app: Flask) -> None:
         picture = info.get("picture")
         aid = google_account_upsert(email, sub, refresh, picture)
         linking_sid = pending.get("linking_session_id") or None
-        if linking_sid:
-            sess = session_load(linking_sid)
-            if sess:
-                ids = list(sess.get("account_ids") or [])
-                if aid not in ids:
-                    ids.append(aid)
-                session_update(linking_sid, ids, email)
-                sid = linking_sid
-            else:
-                sid = session_create([aid], email)
-        else:
-            sid = session_create([aid], email)
+        sid, link_err = finalize_oauth_session(linking_sid=linking_sid, account_id=aid, email=email)
+        if link_err is not None:
+            return _html_callback_page(origin, link_err), 200, {"Content-Type": "text/html; charset=utf-8"}
         payload = {"ok": True, "session_id": sid, "email": email, "pictureUrl": picture}
         return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}
 

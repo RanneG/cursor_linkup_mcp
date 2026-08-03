@@ -122,6 +122,8 @@ def face_enroll():
                     storage.save_enrollment(email, embeddings, model_name=DEFAULT_MODEL_NAME)
                 except ValueError as e:
                     return jsonify({"ok": False, "error": str(e)}), 400
+                except storage.FaceKeyError as e:
+                    return jsonify({"ok": False, "error": str(e)}), 500
                 return jsonify(
                     {
                         "ok": True,
@@ -162,6 +164,8 @@ def face_enroll():
                 storage.save_enrollment(email, embeddings_multi, model_name=DEFAULT_MODEL_NAME)
             except ValueError as e:
                 return jsonify({"ok": False, "error": str(e)}), 400
+            except storage.FaceKeyError as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
             conf = enrollment_consistency_score(embeddings_multi)
             return jsonify(
@@ -235,7 +239,18 @@ def face_verify():
     dev_skip = os.getenv("STITCH_FACE_DEV_SKIP_LIVENESS") == "1"
 
     with _face_lock:
-        rec = storage.load_enrollment(email)
+        try:
+            rec = storage.load_enrollment(email)
+        except storage.FaceKeyError as e:
+            return jsonify(
+                {
+                    "verified": False,
+                    "match": False,
+                    "confidence": 0.0,
+                    "liveness_passed": False,
+                    "error": str(e),
+                }
+            ), 500
         if rec is None:
             return jsonify(
                 {
