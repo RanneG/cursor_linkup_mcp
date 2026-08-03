@@ -28,6 +28,10 @@ STITCH_FACE_VERSION = 1
 STITCH_KDF_ITERATIONS = 480_000
 
 
+class FaceKeyError(RuntimeError):
+    """Master key is corrupt/unusable; refusing operations that would wipe enrollments."""
+
+
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -46,6 +50,24 @@ def _ensure_dir() -> Path:
     return STITCH_FACE_DIR
 
 
+def _has_enrollment_blobs(db_dir: Path) -> bool:
+    return any(db_dir.glob("*.enc"))
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write via temp+replace so a crash cannot leave a truncated master key."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 def _master_key_material() -> bytes:
     _ensure_dir()
     key_path = STITCH_FACE_DIR / ".master_key"
@@ -53,8 +75,15 @@ def _master_key_material() -> bytes:
         raw = key_path.read_bytes()
         if len(raw) >= 32:
             return raw[:32]
+        # Truncated/corrupt key: never rotate if enrollments exist (would make *.enc
+        # permanently undecryptable while is_enrolled() still reports True).
+        if _has_enrollment_blobs(STITCH_FACE_DIR):
+            raise FaceKeyError(
+                "Face DB master key is missing or corrupt, but enrollments exist. "
+                "Refusing to rotate the key. Restore .master_key or delete *.enc to re-enroll."
+            )
     material = os.urandom(32)
-    key_path.write_bytes(material)
+    _atomic_write_bytes(key_path, material)
     try:
         if os.name != "nt":
             os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
