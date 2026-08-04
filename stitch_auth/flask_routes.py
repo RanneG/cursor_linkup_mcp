@@ -22,6 +22,7 @@ from stitch_auth.store import (
     session_accounts_detail,
     session_create,
     session_delete,
+    session_link_account,
     session_load,
     session_update,
     subscription_delete,
@@ -201,12 +202,8 @@ def register_stitch_auth_routes(app: Flask) -> None:
         aid = google_account_upsert(email, sub, refresh, picture)
         linking_sid = pending.get("linking_session_id") or None
         if linking_sid:
-            sess = session_load(linking_sid)
-            if sess:
-                ids = list(sess.get("account_ids") or [])
-                if aid not in ids:
-                    ids.append(aid)
-                session_update(linking_sid, ids, email)
+            # Atomic append — concurrent Add-account callbacks must not clobber each other.
+            if session_link_account(linking_sid, aid, email):
                 sid = linking_sid
             else:
                 sid = session_create([aid], email)
