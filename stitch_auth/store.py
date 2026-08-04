@@ -210,6 +210,38 @@ def session_update(session_id: str, account_ids: list[int], active_email: str) -
         c.commit()
 
 
+def session_link_account(session_id: str, account_id: int, active_email: str) -> bool:
+    """Atomically append ``account_id`` to an existing session.
+
+    OAuth "Add account" callbacks used to load the session, mutate ``account_ids`` in
+    Python, then ``session_update``. Two concurrent callbacks both read the same list
+    and the later write drops the other newly linked account. Hold ``_lock`` for the
+    full read-modify-write so both accounts survive.
+
+    Returns False when the session is missing or expired (caller decides fallback).
+    """
+    c = _get_conn()
+    with _lock:
+        row = c.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            return False
+        if time.time() > float(row["expires_at"]):
+            c.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            c.commit()
+            return False
+        payload = json.loads(row["payload_json"])
+        ids = [int(x) for x in (payload.get("account_ids") or [])]
+        if int(account_id) not in ids:
+            ids.append(int(account_id))
+        new_payload = {"account_ids": ids, "active_email": active_email}
+        c.execute(
+            "UPDATE sessions SET active_email = ?, payload_json = ? WHERE id = ?",
+            (active_email, json.dumps(new_payload), session_id),
+        )
+        c.commit()
+        return True
+
+
 def session_delete(session_id: str) -> None:
     c = _get_conn()
     with _lock:
