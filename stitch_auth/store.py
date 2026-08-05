@@ -268,58 +268,64 @@ def subscriptions_upsert_many(owner_email: str, items: list[dict]) -> list[dict]
     now = time.time()
     out: list[dict] = []
     with _lock:
-        for item in items:
-            sub_id = str(item.get("id") or uuid.uuid4().hex)
-            existing = c.execute("SELECT owner_email FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
-            if existing is not None and str(existing["owner_email"]) != owner_email:
-                # IDs come from the desktop client. Never let a colliding client ID move
-                # another account's row to the active owner.
-                while True:
-                    sub_id = uuid.uuid4().hex
-                    collision = c.execute("SELECT 1 FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
-                    if collision is None:
-                        break
-            row = {
-                "id": sub_id,
-                "owner_email": owner_email,
-                "name": str(item.get("name") or "").strip(),
-                "category": str(item.get("category") or "software").strip(),
-                "amount_usd": round(float(item.get("amountUsd") or 0.0), 2),
-                "due_date_iso": str(item.get("dueDateIso") or time.strftime("%Y-%m-%d")).strip(),
-                "status": str(item.get("status") or "pending").strip(),
-                "source_email": item.get("sourceEmail"),
-                "created_at": now,
-                "updated_at": now,
-            }
-            c.execute(
-                """
-                INSERT INTO subscriptions
-                    (id, owner_email, name, category, amount_usd, due_date_iso, status, source_email, created_at, updated_at)
-                VALUES
-                    (:id, :owner_email, :name, :category, :amount_usd, :due_date_iso, :status, :source_email, :created_at, :updated_at)
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name,
-                    category=excluded.category,
-                    amount_usd=excluded.amount_usd,
-                    due_date_iso=excluded.due_date_iso,
-                    status=excluded.status,
-                    source_email=excluded.source_email,
-                    updated_at=excluded.updated_at
-                """,
-                row,
-            )
-            out.append(
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "category": row["category"],
-                    "amountUsd": row["amount_usd"],
-                    "dueDateIso": row["due_date_iso"],
-                    "status": row["status"],
-                    "sourceEmail": row["source_email"],
+        # One shared SQLite connection: a mid-batch exception must roll back, or the
+        # next successful commit on this connection would persist partial rows.
+        try:
+            for item in items:
+                sub_id = str(item.get("id") or uuid.uuid4().hex)
+                existing = c.execute("SELECT owner_email FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+                if existing is not None and str(existing["owner_email"]) != owner_email:
+                    # IDs come from the desktop client. Never let a colliding client ID move
+                    # another account's row to the active owner.
+                    while True:
+                        sub_id = uuid.uuid4().hex
+                        collision = c.execute("SELECT 1 FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+                        if collision is None:
+                            break
+                row = {
+                    "id": sub_id,
+                    "owner_email": owner_email,
+                    "name": str(item.get("name") or "").strip(),
+                    "category": str(item.get("category") or "software").strip(),
+                    "amount_usd": round(float(item.get("amountUsd") or 0.0), 2),
+                    "due_date_iso": str(item.get("dueDateIso") or time.strftime("%Y-%m-%d")).strip(),
+                    "status": str(item.get("status") or "pending").strip(),
+                    "source_email": item.get("sourceEmail"),
+                    "created_at": now,
+                    "updated_at": now,
                 }
-            )
-        c.commit()
+                c.execute(
+                    """
+                    INSERT INTO subscriptions
+                        (id, owner_email, name, category, amount_usd, due_date_iso, status, source_email, created_at, updated_at)
+                    VALUES
+                        (:id, :owner_email, :name, :category, :amount_usd, :due_date_iso, :status, :source_email, :created_at, :updated_at)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        category=excluded.category,
+                        amount_usd=excluded.amount_usd,
+                        due_date_iso=excluded.due_date_iso,
+                        status=excluded.status,
+                        source_email=excluded.source_email,
+                        updated_at=excluded.updated_at
+                    """,
+                    row,
+                )
+                out.append(
+                    {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "category": row["category"],
+                        "amountUsd": row["amount_usd"],
+                        "dueDateIso": row["due_date_iso"],
+                        "status": row["status"],
+                        "sourceEmail": row["source_email"],
+                    }
+                )
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
     return out
 
 
