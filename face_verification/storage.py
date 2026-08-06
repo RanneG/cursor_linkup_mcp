@@ -46,6 +46,20 @@ def _ensure_dir() -> Path:
     return STITCH_FACE_DIR
 
 
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write via temp+replace so a crash cannot leave a truncated enrollment blob."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 def _master_key_material() -> bytes:
     _ensure_dir()
     key_path = STITCH_FACE_DIR / ".master_key"
@@ -126,7 +140,7 @@ def save_enrollment(email: str, embeddings: list[Any], *, model_name: str) -> No
     raw = json.dumps(rec.to_dict(), separators=(",", ":")).encode("utf-8")
     token = _fernet_for_email(email)
     blob = token.encrypt(raw)
-    _path_for_email(email).write_bytes(blob)
+    _atomic_write_bytes(_path_for_email(email), blob)
 
 
 def load_enrollment(email: str) -> EnrollmentRecord | None:
@@ -161,4 +175,4 @@ def touch_last_verified(email: str) -> None:
     rec.last_verified = datetime.now(timezone.utc).isoformat()
     raw = json.dumps(rec.to_dict(), separators=(",", ":")).encode("utf-8")
     token = _fernet_for_email(email)
-    _path_for_email(email).write_bytes(token.encrypt(raw))
+    _atomic_write_bytes(_path_for_email(email), token.encrypt(raw))
