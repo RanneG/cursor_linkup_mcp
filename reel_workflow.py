@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
 WORKFLOW_TYPES = ("tutorial", "opinion", "funnel", "inspiration")
 
@@ -122,11 +123,26 @@ class WorkflowCard:
     not_doing: list[str]
 
 
+def sanitize_slug(raw: str, *, max_len: int = 48) -> str:
+    """Collapse a URL segment or free-form slug into a single safe path component.
+
+    Instagram reel/post IDs are taken from the URL path without sanitization in older
+    code. Crafted segments like `..\\..\\evil` (or percent-encoded backslashes) can
+    escape `data/inbox/` on Windows when joined into download/transcript paths.
+    """
+    text = unquote(raw or "").strip().replace("\\", "/")
+    # Keep only the final segment so embedded separators cannot climb out of inbox/.
+    text = text.split("/")[-1]
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", text).strip("-")
+    cleaned = cleaned[:max_len].strip("-")
+    return cleaned or "reel"
+
+
 def slug_from_url(url: str) -> str:
     m = re.search(r"/(?:reels?|p)/([^/?#]+)", url, re.I)
     if m:
-        return m.group(1)
-    return re.sub(r"[^a-zA-Z0-9_-]+", "-", url)[:48].strip("-") or "reel"
+        return sanitize_slug(m.group(1))
+    return sanitize_slug(re.sub(r"[^a-zA-Z0-9_-]+", "-", url), max_len=48)
 
 
 def clean_transcript(text: str) -> str:
@@ -314,15 +330,21 @@ def write_workflow_card(
     transcript_text: str,
     transcript_filename: str | None = None,
 ) -> Path:
-    transcript_filename = transcript_filename or f"{slug}.md"
+    safe_slug = sanitize_slug(slug)
+    transcript_filename = transcript_filename or f"{safe_slug}.md"
+    # Filename may come from an existing transcript; keep basename only.
+    transcript_filename = Path(transcript_filename).name
     transcript_rel = f"data/inbox/{transcript_filename}"
     card = build_workflow_card(
-        slug=slug,
+        slug=safe_slug,
         source_url=source_url,
         transcript_text=transcript_text,
         transcript_rel_path=transcript_rel,
     )
-    out = inbox_dir / f"{slug}.workflow.md"
+    out = (inbox_dir / f"{safe_slug}.workflow.md").resolve()
+    inbox_root = inbox_dir.resolve()
+    if out != inbox_root and inbox_root not in out.parents:
+        raise ValueError(f"Refusing to write workflow card outside inbox: {out}")
     out.write_text(render_workflow_markdown(card), encoding="utf-8")
     return out
 

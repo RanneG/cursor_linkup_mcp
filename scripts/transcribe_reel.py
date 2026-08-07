@@ -15,7 +15,7 @@ INBOX = ROOT / "data" / "inbox"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from reel_workflow import slug_from_url, write_workflow_card, workflow_from_transcript_file
+from reel_workflow import sanitize_slug, slug_from_url, write_workflow_card, workflow_from_transcript_file
 
 
 def run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -25,9 +25,20 @@ def run(cmd: list[str], *, cwd: Path | None = None) -> None:
         raise RuntimeError(f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{err}")
 
 
+def _inbox_path(out_dir: Path, slug: str, suffix: str) -> Path:
+    """Join slug+suffix under out_dir and refuse path escape (defense in depth)."""
+    safe = sanitize_slug(slug)
+    path = (out_dir / f"{safe}{suffix}").resolve()
+    root = out_dir.resolve()
+    if path != root and root not in path.parents:
+        raise ValueError(f"Refusing path outside inbox: {path}")
+    return path
+
+
 def download(url: str, out_dir: Path, slug: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    template = str(out_dir / f"{slug}.%(ext)s")
+    safe = sanitize_slug(slug)
+    template = str(_inbox_path(out_dir, safe, ".%(ext)s"))
     run(
         [
             sys.executable,
@@ -41,10 +52,10 @@ def download(url: str, out_dir: Path, slug: str) -> Path:
             url,
         ]
     )
-    matches = sorted(out_dir.glob(f"{slug}.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    matches = sorted(out_dir.glob(f"{safe}.*"), key=lambda p: p.stat().st_mtime, reverse=True)
     media = [p for p in matches if p.suffix.lower() in {".mp4", ".webm", ".mkv", ".m4a", ".mp3"}]
     if not media:
-        raise FileNotFoundError(f"No media downloaded for {slug} in {out_dir}")
+        raise FileNotFoundError(f"No media downloaded for {safe} in {out_dir}")
     return media[0]
 
 
@@ -106,9 +117,9 @@ def main() -> int:
         parser.error("url is required unless --workflow-only is set")
 
     slug = slug_from_url(args.url)
-    media = INBOX / f"{slug}.mp4"
-    wav = INBOX / f"{slug}.wav"
-    md = INBOX / f"{slug}.md"
+    media = _inbox_path(INBOX, slug, ".mp4")
+    wav = _inbox_path(INBOX, slug, ".wav")
+    md = _inbox_path(INBOX, slug, ".md")
 
     print(f"Downloading -> {INBOX}")
     downloaded = download(args.url, INBOX, slug)
@@ -146,7 +157,7 @@ def main() -> int:
         "",
     ]
     md.write_text("\n".join(body), encoding="utf-8")
-    (INBOX / f"{slug}.meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    _inbox_path(INBOX, slug, ".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     workflow = emit_workflow(slug, args.url, text or "")
 
