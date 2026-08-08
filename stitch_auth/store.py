@@ -15,6 +15,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 _lock = threading.Lock()
+_fernet_key_lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
 
@@ -25,6 +26,41 @@ def _db_path() -> Path:
     return Path.home() / ".stitch" / "stitch_auth.db"
 
 
+def _load_or_create_fernet_key(path: Path) -> bytes:
+    """Return the on-disk Fernet key, creating it at most once.
+
+    Concurrent first-time OAuth/encrypt paths used to race on
+    ``path.write_bytes(Fernet.generate_key())``, so some ``refresh_token_enc``
+    blobs were sealed under a discarded key and became permanently undecryptable.
+    Exclusive create (``O_CREAT|O_EXCL``) plus a dedicated lock makes creation
+    single-winner across threads and processes.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _fernet_key_lock:
+        for _ in range(8):
+            try:
+                fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                raw = path.read_bytes()
+                if len(raw) >= 32:
+                    return raw
+                # Sibling still writing the exclusive create — brief wait.
+                time.sleep(0.01)
+                continue
+            try:
+                key = Fernet.generate_key()
+                os.write(fd, key)
+                try:
+                    os.fsync(fd)
+                except OSError:
+                    pass
+                return key
+            finally:
+                os.close(fd)
+        # Last resort: read whatever is on disk (may raise in Fernet()).
+        return path.read_bytes()
+
+
 def _fernet() -> Fernet:
     key_env = os.getenv("STITCH_GOOGLE_FERNET_KEY", "").strip()
     if key_env:
@@ -33,10 +69,7 @@ def _fernet() -> Fernet:
             key = base64.urlsafe_b64encode(hashlib.sha256(key).digest())
         return Fernet(key)
     path = Path.home() / ".stitch" / ".google_fernet_key"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_bytes(Fernet.generate_key())
-    return Fernet(path.read_bytes())
+    return Fernet(_load_or_create_fernet_key(path))
 
 
 def _get_conn() -> sqlite3.Connection:
