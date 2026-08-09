@@ -1,6 +1,9 @@
 # Register weekday 07:30 daily brief cron on Windows PC Hermes.
 param(
-    [string]$TelegramUserId = "8098932781",
+    # Required: numeric Telegram user id for --deliver / TELEGRAM_HOME_CHANNEL.
+    # No hardcoded default — a wrong default would DM briefs to someone else's chat.
+    [Parameter(Mandatory = $false)]
+    [string]$TelegramUserId = "",
     [string]$Schedule = "every weekday at 07:30",
     [string]$JobName = "nami-daily-brief"
 )
@@ -10,6 +13,22 @@ $Root = Split-Path -Parent $PSScriptRoot
 
 if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) {
     Write-Error "hermes not on PATH. Open a new terminal after install."
+}
+
+if (-not $TelegramUserId) {
+    $existingHome = (& hermes config get TELEGRAM_HOME_CHANNEL 2>$null | Out-String).Trim()
+    if ($existingHome -match '^\d+$') {
+        $TelegramUserId = $existingHome
+        Write-Host "Using existing TELEGRAM_HOME_CHANNEL=$TelegramUserId" -ForegroundColor Cyan
+    }
+}
+
+if (-not ($TelegramUserId -match '^\d+$')) {
+    Write-Error @"
+Telegram user id required. Pass -TelegramUserId <digits> (from Telegram pairing / @userinfobot).
+Refusing to create cron delivery without an explicit chat id.
+Example: .\scripts\Setup-NamiDailyBrief.ps1 -TelegramUserId 123456789
+"@
 }
 
 Write-Host "=== Sync Nami skills ===" -ForegroundColor Cyan
