@@ -114,6 +114,16 @@ def _resolve_agent_cmd() -> str:
     return "agent"
 
 
+def build_agent_cli_argv(agent_cmd: str, prompt: str) -> list[str]:
+    """Headless Cursor Agent CLI argv for the PC build worker.
+
+    Must use ``-p/--print`` so the process exits without a TUI, ``--force`` so
+    file/shell tool calls are not blocked on interactive approval, and
+    ``--trust`` so workspace trust does not prompt (headless-only flag).
+    """
+    return [agent_cmd, "-p", "--force", "--trust", prompt]
+
+
 def run_agent_cli(task: str, cwd: Path, *, turn_cap: int) -> AgentRunResult:
     """Cursor Agent CLI (recommended on Windows — Python cursor_sdk bridge fails there)."""
     api_key = os.getenv("CURSOR_API_KEY", "").strip()
@@ -131,7 +141,7 @@ def run_agent_cli(task: str, cwd: Path, *, turn_cap: int) -> AgentRunResult:
 
     try:
         proc = subprocess.run(
-            [agent_cmd, "--trust", prompt],
+            build_agent_cli_argv(agent_cmd, prompt),
             cwd=cwd,
             env=env,
             capture_output=True,
