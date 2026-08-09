@@ -87,7 +87,8 @@ Only after Step 3 passes once.
 
 ```powershell
 cd C:\Users\ranne\Cursor\cursor_linkup_mcp
-.\scripts\Setup-NamiDailyBrief.ps1
+# Uses TELEGRAM_HOME_CHANNEL if already set; otherwise pass your id explicitly:
+.\scripts\Setup-NamiDailyBrief.ps1 -TelegramUserId 8098932781
 ```
 
 Or ask Nami in Telegram:

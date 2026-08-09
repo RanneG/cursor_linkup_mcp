@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from nami_build.agent_runner import build_prompt, git_branch_name
+from nami_build.agent_runner import build_agent_cli_argv, build_prompt, git_branch_name
 from nami_build.queue import BuildJob, BuildQueue, JobStatus
 
 
@@ -50,6 +50,18 @@ class BuildPromptTests(unittest.TestCase):
 
     def test_branch_name(self):
         self.assertTrue(git_branch_name("abcd1234efgh").startswith("nami/build-"))
+
+    def test_agent_cli_argv_is_headless_and_noninteractive(self):
+        """Windows mobile builds must not start the interactive TUI (hangs forever)."""
+        prompt = build_prompt("ship it", turn_cap=3)
+        argv = build_agent_cli_argv("agent", prompt)
+        self.assertEqual(argv[0], "agent")
+        self.assertIn("-p", argv)
+        self.assertIn("--force", argv)
+        self.assertIn("--trust", argv)
+        self.assertEqual(argv[-1], prompt)
+        # Legacy bug: `agent --trust <prompt>` without -p starts interactive mode.
+        self.assertNotEqual(argv[1:3], ["--trust", prompt])
 
 
 class BuildHttpTests(unittest.TestCase):
