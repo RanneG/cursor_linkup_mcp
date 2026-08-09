@@ -59,15 +59,30 @@ def _redirect_origin_ipv4(target_origin: str) -> str:
     return urlunparse((scheme, netloc, "", "", "", "")).rstrip("/")
 
 
+def _json_for_html_script(value: Any) -> str:
+    """JSON safe to embed inside a HTML ``<script>`` block.
+
+    ``json.dumps`` alone is not HTML-safe: a string containing ``</script>`` terminates the
+    script element (classic reflected XSS). Escape ``<``/``>``/``&`` to Unicode escapes so the
+    HTML parser cannot break out of the script block.
+    """
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
 def _html_callback_page(target_origin: str, payload: dict[str, Any]) -> str:
     """OAuth callback: postMessage to popup opener when present; else redirect app with session in URL hash.
 
     External browsers and pywebview often block popups or omit window.opener; same-window OAuth
     completes here and must bounce the session back via hash (consumed by the SPA).
     """
-    origin_js = json.dumps(target_origin.rstrip("/"))
-    redirect_base_js = json.dumps(_redirect_origin_ipv4(target_origin))
-    payload_js = json.dumps(payload)
+    origin_js = _json_for_html_script(target_origin.rstrip("/"))
+    redirect_base_js = _json_for_html_script(_redirect_origin_ipv4(target_origin))
+    payload_js = _json_for_html_script(payload)
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/><title>Stitch sign-in</title></head>
 <body>
@@ -184,8 +199,12 @@ def register_stitch_auth_routes(app: Flask) -> None:
             return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}
         access = token.get("access_token") or ""
         refresh = token.get("refresh_token") or ""
-        if not access or not refresh:
-            payload = {"ok": False, "error": "no_refresh_token", "detail": "Try again and ensure consent is granted."}
+        if not access:
+            payload = {
+                "ok": False,
+                "error": "no_access_token",
+                "detail": "Try again and ensure consent is granted.",
+            }
             return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}
         try:
             info = google_client.userinfo_from_token_response(token)
@@ -195,6 +214,19 @@ def register_stitch_auth_routes(app: Flask) -> None:
         email = (info.get("email") or "").strip()
         if not email:
             payload = {"ok": False, "error": "no_email", "detail": str(info)}
+            return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}
+        # Google often omits refresh_token on re-consent even with prompt=consent. Reuse the
+        # encrypted token we already store for this email instead of soft-locking the user.
+        if not refresh:
+            existing = google_account_by_email(email)
+            if existing:
+                try:
+                    refresh = decrypt_refresh(existing)
+                except Exception:  # noqa: BLE001
+                    logger.exception("reuse stored refresh token")
+                    refresh = ""
+        if not refresh:
+            payload = {"ok": False, "error": "no_refresh_token", "detail": "Try again and ensure consent is granted."}
             return _html_callback_page(origin, payload), 200, {"Content-Type": "text/html; charset=utf-8"}
         sub = info.get("sub")
         picture = info.get("picture")
