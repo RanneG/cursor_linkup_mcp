@@ -17,6 +17,7 @@ from stitch_auth.store import (
     google_account_by_email,
     google_account_by_id,
     google_account_upsert,
+    normalize_amount_usd,
     oauth_pending_pop,
     oauth_pending_save,
     session_accounts_detail,
@@ -343,9 +344,9 @@ def register_stitch_auth_routes(app: Flask) -> None:
                 continue
             amt = item.get("amountUsd")
             try:
-                amount = float(amt) if amt is not None else 0.0
-            except (TypeError, ValueError):
-                amount = 0.0
+                amount = normalize_amount_usd(amt)
+            except ValueError:
+                return jsonify({"ok": False, "error": "invalid_amount_usd"}), 400
             due = (item.get("renewalDateIso") or item.get("dueDateIso") or "").strip()
             if not due:
                 due = time.strftime("%Y-%m-%d")
@@ -357,13 +358,16 @@ def register_stitch_auth_routes(app: Flask) -> None:
                     "id": f"sub-import-{secrets.token_hex(6)}",
                     "name": name,
                     "category": cat,
-                    "amountUsd": round(amount, 2),
+                    "amountUsd": amount,
                     "dueDateIso": due,
                     "status": "pending",
                     "sourceEmail": item.get("sourceEmail"),
                 }
             )
-        imported = subscriptions_upsert_many(owner_email or "", imported_input)
+        try:
+            imported = subscriptions_upsert_many(owner_email or "", imported_input)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": "invalid_amount_usd", "detail": str(e)}), 400
         all_subscriptions = subscriptions_list(owner_email or "")
         return jsonify(
             {
@@ -405,18 +409,25 @@ def register_stitch_auth_routes(app: Flask) -> None:
             name = (item.get("name") or "").strip()
             if not name:
                 continue
+            try:
+                amount = normalize_amount_usd(item.get("amountUsd"))
+            except ValueError:
+                return jsonify({"ok": False, "error": "invalid_amount_usd"}), 400
             normalized.append(
                 {
                     "id": item.get("id"),
                     "name": name,
                     "category": (item.get("category") or "software"),
-                    "amountUsd": item.get("amountUsd"),
+                    "amountUsd": amount,
                     "dueDateIso": item.get("dueDateIso"),
                     "status": (item.get("status") or "pending"),
                     "sourceEmail": item.get("sourceEmail"),
                 }
             )
-        upserted = subscriptions_upsert_many(owner_email or "", normalized)
+        try:
+            upserted = subscriptions_upsert_many(owner_email or "", normalized)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": "invalid_amount_usd", "detail": str(e)}), 400
         rows = subscriptions_list(owner_email or "")
         return jsonify({"ok": True, "ownerEmail": owner_email, "upserted": upserted, "count": len(upserted), "subscriptions": rows})
 

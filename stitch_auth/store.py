@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -13,6 +14,24 @@ import uuid
 from pathlib import Path
 
 from cryptography.fernet import Fernet
+
+
+def normalize_amount_usd(value: object) -> float:
+    """Parse a subscription amount; reject NaN/Inf that break JSON responses.
+
+    Flask/jsonify emit non-standard ``Infinity``/``NaN`` tokens for non-finite
+    floats. Browsers then fail ``JSON.parse`` on ``/api/subscriptions/*``, which
+    bricks the Stitch subscription panel until the row is removed from SQLite.
+    """
+    if value is None or value == "":
+        return 0.0
+    try:
+        amount = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as e:
+        raise ValueError("amountUsd must be a finite number") from e
+    if not math.isfinite(amount):
+        raise ValueError("amountUsd must be a finite number")
+    return round(amount, 2)
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
@@ -252,7 +271,7 @@ def subscriptions_list(owner_email: str) -> list[dict]:
             "ownerEmail": str(r["owner_email"]),
             "name": str(r["name"]),
             "category": str(r["category"]),
-            "amountUsd": round(float(r["amount_usd"]), 2),
+            "amountUsd": _amount_usd_from_db(r["amount_usd"]),
             "dueDateIso": str(r["due_date_iso"]),
             "status": str(r["status"]),
             "sourceEmail": r["source_email"],
@@ -263,12 +282,23 @@ def subscriptions_list(owner_email: str) -> list[dict]:
     ]
 
 
+def _amount_usd_from_db(raw: object) -> float:
+    """Coerce stored amounts for API responses; scrub legacy non-finite poison."""
+    try:
+        return normalize_amount_usd(raw)
+    except ValueError:
+        return 0.0
+
+
 def subscriptions_upsert_many(owner_email: str, items: list[dict]) -> list[dict]:
+    # Validate amounts before any writes so a bad Infinity/NaN cannot leave a
+    # partial batch committed (or uncommitted-but-later-committed) on the shared conn.
+    amounts = [normalize_amount_usd(item.get("amountUsd")) for item in items]
     c = _get_conn()
     now = time.time()
     out: list[dict] = []
     with _lock:
-        for item in items:
+        for item, amount in zip(items, amounts, strict=True):
             sub_id = str(item.get("id") or uuid.uuid4().hex)
             existing = c.execute("SELECT owner_email FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
             if existing is not None and str(existing["owner_email"]) != owner_email:
@@ -284,7 +314,7 @@ def subscriptions_upsert_many(owner_email: str, items: list[dict]) -> list[dict]
                 "owner_email": owner_email,
                 "name": str(item.get("name") or "").strip(),
                 "category": str(item.get("category") or "software").strip(),
-                "amount_usd": round(float(item.get("amountUsd") or 0.0), 2),
+                "amount_usd": amount,
                 "due_date_iso": str(item.get("dueDateIso") or time.strftime("%Y-%m-%d")).strip(),
                 "status": str(item.get("status") or "pending").strip(),
                 "source_email": item.get("sourceEmail"),

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib
+import json
+import math
 import os
 import tempfile
 import unittest
@@ -80,6 +82,67 @@ class TestSubscriptionStore(unittest.TestCase):
                 self.assertEqual(rows[0]["id"], "sub-1")
                 self.assertEqual(rows[0]["name"], "New")
                 self.assertEqual(rows[0]["amountUsd"], 7.0)
+                store._reset_connection_for_tests()
+
+    def test_non_finite_amount_usd_rejected_and_not_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "stitch_auth.db"
+            with patch.dict(os.environ, {"STITCH_AUTH_DB": str(db_path)}):
+                import stitch_auth.store as store
+
+                importlib.reload(store)
+
+                store.subscriptions_upsert_many(
+                    "alice@example.com",
+                    [{"id": "good", "name": "Good", "amountUsd": 9.99, "dueDateIso": "2026-05-10"}],
+                )
+                for bad in (float("inf"), float("-inf"), float("nan"), 1e309, "Infinity", "NaN"):
+                    with self.assertRaises(ValueError):
+                        store.subscriptions_upsert_many(
+                            "alice@example.com",
+                            [
+                                {
+                                    "id": "poison",
+                                    "name": "Poison",
+                                    "amountUsd": bad,
+                                    "dueDateIso": "2026-05-10",
+                                }
+                            ],
+                        )
+
+                rows = store.subscriptions_list("alice@example.com")
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["id"], "good")
+                self.assertTrue(math.isfinite(rows[0]["amountUsd"]))
+                # API payloads must stay JSON-compliant for browser clients.
+                json.dumps(rows, allow_nan=False)
+                store._reset_connection_for_tests()
+
+    def test_list_scrubs_legacy_non_finite_amount(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "stitch_auth.db"
+            with patch.dict(os.environ, {"STITCH_AUTH_DB": str(db_path)}):
+                import stitch_auth.store as store
+
+                importlib.reload(store)
+
+                store.subscriptions_upsert_many(
+                    "alice@example.com",
+                    [{"id": "legacy", "name": "Legacy", "amountUsd": 1.0, "dueDateIso": "2026-05-10"}],
+                )
+                # Simulate a pre-fix poison row already in SQLite.
+                conn = store._get_conn()
+                with store._lock:
+                    conn.execute(
+                        "UPDATE subscriptions SET amount_usd = ? WHERE id = ?",
+                        (float("inf"), "legacy"),
+                    )
+                    conn.commit()
+
+                rows = store.subscriptions_list("alice@example.com")
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["amountUsd"], 0.0)
+                json.dumps(rows, allow_nan=False)
                 store._reset_connection_for_tests()
 
 
